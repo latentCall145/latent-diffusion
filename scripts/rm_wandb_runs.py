@@ -27,15 +27,9 @@ def should_delete(fnames, mod=None):
     return ret
 
 for run in runs:
-    if 'pt9' in run.name:
-        #run.upload_file('../trained_models/ddpm_0102_fixed.pth')
-        print(list(run.files()))
-
-
-
-    #run_fnames_files = []
-    #for f in run.files():
-    #    run_fnames_files.append((f.name, f))
-    #for fname, f in should_delete(run_fnames_files):
-    #    print('Deleting', fname, 'from run', run)
-    #    #f.delete()
+    run_fnames_files = []
+    for f in run.files():
+        run_fnames_files.append((f.name, f))
+    for fname, f in should_delete(run_fnames_files):
+        print('Deleting', fname, 'from run', run)
+        f.delete()
