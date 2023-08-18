@@ -38,38 +38,55 @@ with torch.no_grad():
         vae.eval()
 
         ddpm = UNet()
-        sd = torch.load('../trained_models/ddpm_0037.pth')['ddpm_state_dict']
+        sd = torch.load(f'../trained_models/ddpm_0102_fixed.pth')['ddpm_state_dict']
         ddpm.load_state_dict(sd, strict=True)
         ddpm = ddpm.to(device)
         ddpm.eval()
-        #ddpm = torch.compile(ddpm)
-
+        
         nsr = NoiseSchedule().to(device)
         sampler = DDIMSampler(ddpm, nsr, tau_dim=20)
 
-        #mean, _log_var = torch.split(vae.encoder(x1), vae.nz, dim=1)
-        #mean /= mean.std()
-        #for img_fname in ['test.jpg', 'deer256.jpg', 'cake.jpg']:
-        #    mean, _log_var = torch.split(vae.encoder(load_img(f'{homedir}/Projects/{img_fname}').to(device)), vae.nz, dim=1)
-        #    mean /= mean.std()
-        #    noise = torch.randn_like(mean)
-        #    ts, losses = [], []
-        #    for t in range(1, 1000, 100):
-        #        noised = mean * nsr.signal_stds[t] + noise * nsr.noise_stds[t]
-        #        noise_pred = ddpm(noised, torch.tensor([t], dtype=torch.long, device=device))
-        #        loss = F.mse_loss(noise_pred, noise).item()
-        #        print('T:', t, 'MSE:', loss)
-        #        ts.append(t)
-        #        losses.append(loss)
-        #    plt.plot(ts, losses)
+        #samp_models = [37, 64, 102]
+        #opacities = np.linspace(0, 1, len(samp_models)+1)[1:]
+        #img_fnames = ['test.jpg', 'deer256.jpg', 'cake.jpg']
+        #colors = ['blue', 'red', 'green', 'orange', 'pink', 'black'][:len(img_fnames)]
+        #for mv, opacity in zip(samp_models, opacities):
+        #    sd = torch.load(f'../trained_models/ddpm_{mv:0>4}.pth')['ddpm_state_dict']
+        #    ddpm.load_state_dict(sd, strict=True)
+        #    ddpm = ddpm.to(device)
+        #    ddpm.eval()
+        #    #ddpm = torch.compile(ddpm)
+
+        #    nsr = NoiseSchedule().to(device)
+        #    sampler = DDIMSampler(ddpm, nsr, tau_dim=50)
+
+        #    #mean, _log_var = torch.split(vae.encoder(x1), vae.nz, dim=1)
+        #    #mean /= mean.std()
+        #    for img_fname, color in zip(img_fnames, colors):
+        #    #for img_fname in ['cake.jpg']:
+        #        mean, log_var = torch.split(vae.encoder(load_img(f'{homedir}/Projects/{img_fname}').to(device)), vae.nz, dim=1)
+        #        for _ in range(1):
+        #            z = vae.sample(mean, log_var)
+        #            z /= z.std()
+        #            noise = torch.randn_like(z)
+        #            ts, losses = [], []
+        #            #fig, ax  = plt.subplots(4, 5)
+        #            for t_idx, t in enumerate(sampler.tau):
+        #                noised = z * nsr.signal_stds[t] + noise * nsr.noise_stds[t]
+        #                noise_pred = ddpm(noised, torch.tensor([t], dtype=torch.long, device=device))
+        #                #ax[t_idx//5][t_idx%5].hist(noise_pred.flatten().cpu().numpy())
+        #                #ax[t_idx//5][t_idx%5].set_title(f'T: {t}, std: {noise_pred.std()}')
+        #                #ax[2+t_idx//5][t_idx%5].hist(noise_pred.flatten().cpu().numpy())
+        #                #ax[2+t_idx//5][t_idx%5].set_title(f'z; T: {t}, std: {z.std()}')
+        #                loss = F.mse_loss(noise_pred, noise).item()
+        #                print('T:', t, 'MSE:', loss, noise_pred.std(), noise.std())
+        #                ts.append(t)
+        #                losses.append(loss)
+        #            plt.plot(ts, losses, label=f'{mv}_{img_fname}', color=color, alpha=opacity)
+        #            #plt.show()
+        #plt.legend()
         #plt.show()
 
-        #fig, ax = plt.subplots(2, 2)
-        #ax[0][0].imshow(tn(mean)[:, :, :3])
-        #ax[0][1].imshow(tn(noise)[:, :, :3])
-        #ax[1][0].imshow(tn(noised)[:, :, :3])
-        #ax[1][1].imshow(tn(noise_pred)[:, :, :3])
-        #plt.show()
         #raise
 
         text_embedder = FrozenCLIPEmbedder()
@@ -90,12 +107,6 @@ with torch.no_grad():
             ypred = vae.decoder(z)
             torch.cuda.synchronize()
             print(f'Time for VAE decoder inference of {z.shape} shape tensor: {time.time()-tic:.4f} s')
+            Image.fromarray((255*tn(ypred)).astype(np.uint8)).save('/tmp/ldm_img.png')
             plt.imshow(tn(ypred))
             plt.show()
-
-            #fig, ax = plt.subplots(1, 2)
-            #ax[0].set_title('Input')
-            #ax[0].imshow(tn(x1))
-            #ax[1].set_title('VAE Reconstruction')
-            #ax[1].imshow(tn(ypred))
-            #plt.show()

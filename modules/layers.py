@@ -1,7 +1,7 @@
 import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
-import torch, math, os, einops
+import torch, math, os
 try:
     from flash_attn import flash_attn_func
     ENABLE_FLASH_ATTN = ('DISABLE_FLASH' not in os.environ) or (os.environ['DISABLE_FLASH'] != '1')
@@ -62,10 +62,11 @@ class Upsample(nn.Module):
         self.conv = nn.Conv2d(nc, nc, 3, padding=1)
 
     def forward(self, x):
-        return self.conv(F.interpolate(x, scale_factor=2.0, mode='nearest'))
+        _B, _C, H, W = x.shape
+        return self.conv(F.interpolate(x, size=(H*2, W*2), mode='nearest')) # specifying scale factor offloads op to CPU: https://github.com/pytorch/xla/issues/2588
 
-class MHA(nn.Module): # slightly faster and less mem than torch multihead attn (I suppose from QKV projection being fused)
-    def __init__(self, nc: int, nh: int, kv_dim: int | None = None):
+class MHA(nn.Module): # slightly faster and less mem than torch multihead attn
+    def __init__(self, nc: int, nh: int, kv_dim: int = None):
         '''
         nc: number of input and output channels
         nh: number of heads (note: d_head = nc // nh)
@@ -84,10 +85,8 @@ class MHA(nn.Module): # slightly faster and less mem than torch multihead attn (
     def split_heads(self, x):
         B, L, E = x.shape
         if ENABLE_FLASH_ATTN:
-            #return rearrange(x, 'M N (H D) -> M N H D', D=self.dhead, H=self.nh)
-            return x.reshape(B, L, self.nh, self.dhead)
-        #return rearrange(x, 'M N (H D) -> M H N D', D=self.dhead, H=self.nh)
-        return x.reshape(B, L, self.nh, self.dhead).permute(0, 2, 1, 3).contiguous()
+            return x.reshape(B, L, self.nh, self.dhead) # M N (H D) -> M N H D, D=self.dhead, H=self.nh)
+        return x.reshape(B, L, self.nh, self.dhead).permute(0, 2, 1, 3).contiguous() # M N (H D) -> M H N D, D=self.dhead, H=self.nh
     
     def forward(self, q, kv=None):
         B, L, E = q.shape
@@ -98,12 +97,10 @@ class MHA(nn.Module): # slightly faster and less mem than torch multihead attn (
 
         if ENABLE_FLASH_ATTN:
             qkv = flash_attn_func(q, k, v) # flash attention not on TPU
-            #concatted = rearrange(qkv, 'M N H D -> M N (H D)')
-            concatted = qkv.reshape(B, L, E)
+            concatted = qkv.reshape(B, L, E) # M N H D -> M N (H D)
         else:
             qkv = F.scaled_dot_product_attention(q, k, v) # flash attention not on TPU
-            #concatted = rearrange(qkv, 'M H N D -> M N (H D)')
-            concatted = qkv.permute(0, 2, 1, 3).reshape(B, L, E).contiguous()
+            concatted = qkv.permute(0, 2, 1, 3).reshape(B, L, E).contiguous() # M H N D -> M N (H D)
         return self.out(concatted)
     
 class Attn2d(nn.Module):
@@ -118,11 +115,9 @@ class Attn2d(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        h = self.norm(x).reshape(B, C, H*W).permute(0, 2, 1)
-        #h = rearrange(self.norm(x), 'B C H W -> B (H W) C')
+        h = self.norm(x).reshape(B, C, H*W).permute(0, 2, 1) # B C H W -> B (H W) C
         h = self.attn(h)
-        h = h.permute(0, 2, 1).reshape(B, C, H, W)
-        #h = rearrange(h, 'B (H W) C -> B C H W', H=H, W=W)
+        h = h.permute(0, 2, 1).reshape(B, C, H, W) # B (H W) C -> B C H W
         return x + h
 
 class SwiGLU(nn.Module):
@@ -158,13 +153,11 @@ class TransformerBlock(nn.Module):
     def forward(self, x, context=None):
         B, C, H, W = x.shape
         skip = x
-        #x = rearrange(x, 'B C H W -> B (H W) C')
-        x = x.reshape(B, C, H*W).permute(0, 2, 1).contiguous()
+        x = x.reshape(B, C, H*W).permute(0, 2, 1).contiguous() # B C H W -> B (H W) C
         x = self.attn1(self.norm1(x)) + x
         if context is not None:
             x = self.attn2(self.norm2(x), context) + x
         x = self.ff(self.norm3(x)) + x
-        #x = rearrange(x, 'B (H W) C -> B C H W', H=H, W=W)
-        x = x.permute(0, 2, 1).reshape(B, C, H, W).contiguous()
+        x = x.permute(0, 2, 1).reshape(B, C, H, W).contiguous() # B (H W) C -> B C H W
 
         return x + skip

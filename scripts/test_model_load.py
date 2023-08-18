@@ -13,20 +13,29 @@ with torch.no_grad():
         model = UNet()
         #model = UNetSD()
         #model = UNetSDXL()
-        #model = VAE().to(0)
-        print(model)
+        #model = VAE()
+        #print(model)
         params = sum([p.numel() for p in model.parameters()])
         print(f'Params (in millions): {params/1e6}')
-        raise
-        model = model.half().to(0)
-        model = torch.compile(model)
-        x = torch.zeros((1, model.in_c, 64, 64)).to(0) #.half()
-        c = torch.zeros((1, 77, model.context_dim)).to(0) #.half()
-        t = torch.zeros((1,)).long().to(0)
+        #model = model.half().to(0)
+        model = model.to(0)
 
-        for _ in  range(2):
-            model(x, t, c)
+        is_unet = isinstance(model, UNet)
+        spatial_mult = 1 if is_unet else 8
+        in_c = model.in_c if is_unet else 3
+        context_dim = model.context_dim if is_unet else 1
+        x = torch.zeros((1, in_c, 32*spatial_mult, 32*spatial_mult)).to(0) #.half()
+
+        t = torch.zeros((1,)).long().to(0)
+        c = torch.zeros((1, 64, context_dim)).to(0) #.half()
+
+        tic = time.time()
+        model = torch.compile(model)
+
+        for _i in  range(2):
+            _ = model(x, t, c) if is_unet else model(x)
             torch.cuda.synchronize()
+        print('Time to compile model:', time.time() - tic)
         print('alloc:', torch.cuda.max_memory_allocated() / (1024**3))
         print('reser:', torch.cuda.max_memory_reserved() / (1024**3))
 
@@ -34,6 +43,6 @@ with torch.no_grad():
         N = 20
         for i in range(N):
             print(i, end='\r')
-            model(x, t, c)
+            _ = model(x, t, c) if is_unet else model(x)
             torch.cuda.synchronize()
-        print((time.time() - tic) * 1000  / N)
+        print('Time per step (ms):', (time.time() - tic) * 1000  / N)

@@ -4,7 +4,7 @@ api = wandb.Api()
 PROJECT = 'tpu_ldm_ddpm_v2'
 runs = api.runs(f'tiewa_enguin/{PROJECT}')
 
-def should_delete(fnames, mod=5):
+def should_delete(fnames, mod=None):
     if fnames == []:
         return []
 
@@ -22,14 +22,20 @@ def should_delete(fnames, mod=5):
         if not fname.endswith('pth'):
             continue
         model_version = int(fname[:-4].split('_')[-1])
-        if model_version % 5 != 0 and model_version != max_model_version:
+        if (mod is None or model_version % mod != 0) and model_version != max_model_version:
             ret.append((fname, file))
     return ret
 
 for run in runs:
-    run_fnames_files = []
-    for f in run.files():
-        run_fnames_files.append((f.name, f))
-    for fname, f in should_delete(run_fnames_files):
-        print('Deleting', fname, 'from run', run)
-        f.delete()
+    if 'pt9' in run.name:
+        #run.upload_file('../trained_models/ddpm_0102_fixed.pth')
+        print(list(run.files()))
+
+
+
+    #run_fnames_files = []
+    #for f in run.files():
+    #    run_fnames_files.append((f.name, f))
+    #for fname, f in should_delete(run_fnames_files):
+    #    print('Deleting', fname, 'from run', run)
+    #    #f.delete()

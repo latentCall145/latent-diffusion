@@ -225,7 +225,8 @@ class UNet(nn.Module):
             setattr(self, k, v)
 
         temb_c = nc * 4
-        self.time_embed = nn.Embedding(10000, temb_c)
+        #self.time_embed = nn.Embedding(10000, temb_c)
+        self.time_embed = nn.Embedding(1000, temb_c)
 
         # adding downsampling blocks
         out_c = nc

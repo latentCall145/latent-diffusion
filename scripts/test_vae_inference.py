@@ -23,14 +23,6 @@ def tn(tensor, idx=0):
         return tensor.cpu().permute(0, 2, 3, 1).numpy()
     return tensor.float().cpu().clamp(-1, 1).permute(0, 2, 3, 1).numpy()[idx] * 0.5 + 0.5
 
-def show_latent_fmaps(mean):
-    fig, ax = plt.subplots(4,4, figsize=(30, 30))
-    mean = mean.cpu().numpy()[0]
-    for i in range(4):
-        for j in range(4):
-            ax[i][j].imshow(mean[4*i+j])
-    plt.show()
-
 def show_random_sample(mean, log_var):
     std = torch.exp(0.5 * log_var).to(device)
     eps = torch.randn_like(log_var).to(device)
@@ -55,6 +47,13 @@ with torch.no_grad():
     ypred, _mean, _log_var = vae(x1)
     torch.cuda.synchronize()
     print(f'Time for VAE inference of {x1.shape} shape tensor: {time.time()-tic:.4f} s')
+
+    fig, ax = plt.subplots(2,2)
+    for i in range(4):
+        plotted = ax[i//2][i%2].imshow(_mean.cpu().numpy()[0, i])
+        plt.colorbar(plotted, ax=ax[i//2][i%2])
+    plt.show()
+
     fig, ax = plt.subplots(1, 2)
     ax[0].set_title('Input')
     ax[0].imshow(tn(x1))

@@ -42,7 +42,7 @@ print('VAE')
 print('{:<30}  {:<8}'.format('Computational complexity: ', vae_macs))
 print('{:<30}  {:<8}'.format('N params: ', params))
 
-net = UNet()
+net = UNet() #attn_resolutions=[0,2,10])
 #net = UNet(in_c=16, nc=256, ch_mults=[1,2,4], attn_resolutions=[1,1,1])
 unet_input_constructor = lambda shape: {'x': torch.randn(1, *shape), 'timesteps': torch.zeros((1,), dtype=torch.long), 'context': torch.zeros((1, 64, 768))}
 unet_macs, params = get_model_complexity_info(net, (net.in_c, 32, 32), input_constructor=unet_input_constructor, as_strings=True, print_per_layer_stat=False, verbose=False)
