@@ -13,25 +13,28 @@ if ENABLE_FLASH_ATTN:
 else:
     print('Flash Attention not enabled.')
 
-rearrange = lambda tensor, pattern, **axes_lengths: einops.rearrange(tensor, pattern, **axes_lengths).contiguous()
+def zero_module(module):
+    for p in module.parameters():
+        p.detach().zero_()
+    return module
 
 class ResBlock(nn.Module):
-    def __init__(self, in_c: int, nc: int, temb_c: int | None = None):
+    def __init__(self, in_c: int, nc: int, temb_c: int = None):
         '''
         in_c: number of input channels
         nc: number of output channels
         temb_c: number of t (time?) embedding input channels (or None if no time embedding)
         '''
         super().__init__()
-        self.norm1 = nn.GroupNorm(8, in_c)
+        self.norm1 = nn.GroupNorm(32, in_c, eps=1e-4)
         self.act1 = nn.SiLU()
         self.conv1 = nn.Conv2d(in_c, nc, 3, padding=1)
-        self.norm2 = nn.GroupNorm(8, nc)
+        self.norm2 = nn.GroupNorm(32, nc, eps=1e-4)
         self.act2 = nn.SiLU()
-        self.conv2 = nn.Conv2d(nc, nc, 3, padding=1)
+        self.conv2 = zero_module(nn.Conv2d(nc, nc, 3, padding=1))
         if temb_c is not None:
             self.temb_proj = nn.Linear(temb_c, nc)
-        self.skip = nn.Conv2d(in_c, nc, 1) if in_c != nc else None
+        self.skip = nn.Conv2d(in_c, nc, 1, bias=False) if in_c != nc else None
     
     def forward(self, x, temb=None): # temb = t (time) embedding
         skip = x if self.skip is None else self.skip(x)
@@ -39,7 +42,7 @@ class ResBlock(nn.Module):
         if temb is not None:
             x = x + self.temb_proj(F.silu(temb))[:, :, None, None]
         x = self.conv2(self.act2(self.norm2(x)))
-        
+
         return x + skip
 
 class Downsample(nn.Module):
@@ -65,12 +68,13 @@ class Upsample(nn.Module):
         _B, _C, H, W = x.shape
         return self.conv(F.interpolate(x, size=(H*2, W*2), mode='nearest')) # specifying scale factor offloads op to CPU: https://github.com/pytorch/xla/issues/2588
 
-class MHA(nn.Module): # slightly faster and less mem than torch multihead attn
-    def __init__(self, nc: int, nh: int, kv_dim: int = None):
+class MHA(nn.Module): # slightly faster and less mem than torch multihead attn (I suppose from QKV projection being fused)
+    def __init__(self, nc: int, nh: int, kv_dim: int = None, zero_last_layer: bool = True):
         '''
         nc: number of input and output channels
         nh: number of heads (note: d_head = nc // nh)
         kv_dim: dimensionality of key & value input (used for conditioning input in cross-attention; self-attention if kv_dim is None)
+        zero_last_layer: whether or not to zero-init the weights of the last layer (this helps out optimization of residual connections)
         '''
         super().__init__()
         self.nh = nh
@@ -81,6 +85,8 @@ class MHA(nn.Module): # slightly faster and less mem than torch multihead attn
         self.k_in = nn.Linear(kv_dim, nc, bias=False)
         self.v_in = nn.Linear(kv_dim, nc, bias=False)
         self.out = nn.Linear(nc, nc, bias=False)
+        if zero_last_layer:
+            self.out = zero_module(self.out)
     
     def split_heads(self, x):
         B, L, E = x.shape
@@ -110,8 +116,8 @@ class Attn2d(nn.Module):
         '''
         super().__init__()
         self.nc = nc
-        self.norm = nn.GroupNorm(8, self.nc)
-        self.attn = MHA(self.nc, 1)
+        self.norm = nn.GroupNorm(32, self.nc, eps=1e-4)
+        self.attn = MHA(self.nc, max(self.nc // 128, 1)) # max head dim is 128
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -161,3 +167,31 @@ class TransformerBlock(nn.Module):
         x = x.permute(0, 2, 1).reshape(B, C, H, W).contiguous() # B (H W) C -> B C H W
 
         return x + skip
+
+class TimeEmbedding(nn.Module):
+    '''
+    Sinusoidal time embedding with a feed forward network.
+    '''
+    def __init__(self, embed_c: int, out_c: int, max_period: int = 10000):
+        '''
+        embed_c: dimensionality of sinusoidal time embedding
+        out_c: dimensionality of projected (output) embedding
+        max_period: controls the minimum frequency of the embeddings
+        '''
+        super().__init__()
+        self.embed_c = embed_c
+        self.out_c = out_c
+        self.max_period = max_period
+        half = embed_c // 2
+        self.register_buffer('freqs', torch.exp(-math.log(max_period) * torch.linspace(0, 1, half)))
+        self.ff = nn.Sequential(
+            nn.Linear(embed_c, out_c),
+            nn.SiLU(),
+            nn.Linear(out_c, out_c),
+        )
+
+    def forward(self, timesteps):
+        t_freqs = timesteps[:, None] * self.freqs[None, :]
+        emb = torch.cat([t_freqs.cos(), t_freqs.sin()], dim=-1)
+        emb = self.ff(emb)
+        return emb

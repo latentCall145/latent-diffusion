@@ -1,4 +1,4 @@
-from modules.layers import ResBlock, Downsample, Upsample, Attn2d, TransformerBlock
+from modules.layers import ResBlock, Downsample, Upsample, Attn2d, TransformerBlock, TimeEmbedding
 from transformers import CLIPTokenizerFast, CLIPTextModel
 from torchvision.models import vgg16, VGG16_Weights
 import torch.nn.functional as F
@@ -225,8 +225,7 @@ class UNet(nn.Module):
             setattr(self, k, v)
 
         temb_c = nc * 4
-        #self.time_embed = nn.Embedding(10000, temb_c)
-        self.time_embed = nn.Embedding(1000, temb_c)
+        self.time_embed = TimeEmbedding(nc, temb_c)
 
         # adding downsampling blocks
         out_c = nc

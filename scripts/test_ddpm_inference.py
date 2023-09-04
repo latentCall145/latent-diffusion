@@ -100,7 +100,7 @@ with torch.no_grad():
             print(f'Time for CLIP inference: {time.time()-tic:.4f} s')
 
             tic = time.time()
-            z = sampler.get_samples(initial_x=initial_x, context=text_embedding, cfg_weight=5)
+            z = sampler.get_samples(initial_x=initial_x, context=text_embedding, cfg_weight=5) * 1.2
             print(f'Time for DM inference of {initial_x.shape} shape tensor: {time.time()-tic:.4f} s')
 
             tic = time.time()

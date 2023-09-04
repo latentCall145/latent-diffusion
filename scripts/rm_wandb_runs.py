@@ -14,14 +14,20 @@ def should_delete(fnames, mod=None):
         if not fname.endswith('pth'):
             model_versions.append(-1)
             continue
-        model_version = int(fname[:-4].split('_')[-1])
+        try:
+            model_version = int(fname[:-4].split('_')[-1])
+        except:
+            pass
         model_versions.append(model_version)
 
     max_model_version = max(model_versions)
     for (fname, file), model_version in zip(fnames, model_versions):
         if not fname.endswith('pth'):
             continue
-        model_version = int(fname[:-4].split('_')[-1])
+        try:
+            model_version = int(fname[:-4].split('_')[-1])
+        except:
+            pass
         if (mod is None or model_version % mod != 0) and model_version != max_model_version:
             ret.append((fname, file))
     return ret

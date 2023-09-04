@@ -34,29 +34,38 @@ def show_random_sample(mean, log_var):
 with torch.no_grad():
     device = 'cuda'
     homedir = os.path.expanduser('~')
-    img_fname = f'{homedir}/Projects/cake.jpg'
+    img_fname = f'{homedir}/Projects/deer256.jpg'
     x1 = load_img(img_fname).to(device).half()
 
-    sd = torch.load('../trained_models/vae_0003.pth')['vae_state_dict']
+    sd = torch.load('../trained_models/vae_0021.pth')['vae_state_dict']
     vae = VAE().half()
     vae.load_state_dict(sd, strict=True)
     vae = vae.to(device)
     vae.eval()
 
     tic = time.time()
-    ypred, _mean, _log_var = vae(x1)
+    ypred, mean, log_var = vae(x1)
     torch.cuda.synchronize()
     print(f'Time for VAE inference of {x1.shape} shape tensor: {time.time()-tic:.4f} s')
+    print('L1 loss:', F.l1_loss(ypred, x1))
+    print('KL:', 0.5 * (mean.pow(2) - log_var.exp() - log_var - 1).sum())
+    print('KL (mean):', 0.5 * (mean.pow(2)).sum())
+    print('KL (log_var):', 0.5 * (log_var.exp() - log_var - 1).sum())
 
-    fig, ax = plt.subplots(2,2)
-    for i in range(4):
-        plotted = ax[i//2][i%2].imshow(_mean.cpu().numpy()[0, i])
-        plt.colorbar(plotted, ax=ax[i//2][i%2])
-    plt.show()
+    plt.hist(log_var.exp().flatten().cpu().numpy()); plt.show()
 
-    fig, ax = plt.subplots(1, 2)
+    fig, ax = plt.subplots(1, 4)
     ax[0].set_title('Input')
     ax[0].imshow(tn(x1))
     ax[1].set_title('VAE Reconstruction')
     ax[1].imshow(tn(ypred))
+    ax[2].set_title('VAE Reconstruction (mean)')
+    ax[2].imshow(tn(vae.decoder(mean)))
+    ax[3].imshow(tn(vae.decoder(vae.sample(mean, log_var))))
+    plt.show()
+
+    fig, ax = plt.subplots(2,2)
+    for i in range(4):
+        plotted = ax[i//2][i%2].imshow(mean.cpu().numpy()[0, i])
+        plt.colorbar(plotted, ax=ax[i//2][i%2])
     plt.show()
