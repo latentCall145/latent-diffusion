@@ -4,6 +4,7 @@ sys.path.append('..') # for python file.py within ./scripts dir
 
 from modules.samplers import NoiseSchedule, DDIMSampler
 from PIL import Image
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 import torch, math, os
@@ -43,6 +44,7 @@ for t in range(steps, 0, -1):
     print(f'T: {t}, Tau[t-1]: {samp.tau[t-1]}')
     noised = samp.denoise_step(noised, t, noise_pred)
     if t % (steps//10) == 0:
+        print(F.mse_loss(z, noised))
         print(f'noised_{t-1}', noised.mean(), noised.std())
         fig, ax = plt.subplots(1,2)
         ax[0].imshow(denorm(x))

@@ -35,10 +35,10 @@ with torch.no_grad():
     device = 'cuda'
     homedir = os.path.expanduser('~')
     img_fname = f'{homedir}/Projects/deer256.jpg'
-    x1 = load_img(img_fname).to(device).half()
+    x1 = load_img(img_fname).to(device) #.half()
 
-    sd = torch.load('../trained_models/vae_0021.pth')['vae_state_dict']
-    vae = VAE().half()
+    sd = torch.load('../trained_models/vae_0029_stable_norm.pth')['vae_state_dict']
+    vae = VAE() #.half()
     vae.load_state_dict(sd, strict=True)
     vae = vae.to(device)
     vae.eval()

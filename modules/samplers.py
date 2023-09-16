@@ -20,10 +20,8 @@ class NoiseSchedule(nn.Module):
         B = x.shape[0]
         noise = torch.randn_like(x)
         timesteps = torch.randint(self.t, (B,))
-        #noised = self.signal_stds[timesteps] * x + self.noise_stds[timesteps] * noise
         noised = self.signal_stds[timesteps][:, None, None, None] * x + self.noise_stds[timesteps][:, None, None, None] * noise
-        #return noised.detach(), timesteps, noise # not entirely sure why detach is needed
-        return noised, timesteps, noise # not entirely sure why detach is needed
+        return noised, timesteps, noise
 
 class DDIMSampler():
     def __init__(self, denoiser,

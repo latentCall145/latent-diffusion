@@ -10,14 +10,16 @@ import torch, time
 
 with torch.no_grad():
     with torch.amp.autocast('cuda', dtype=torch.float16):
-        model = UNet()
+        #model = UNet()
         #model = UNetSD()
         #model = UNetSDXL()
-        #model = VAE()
+        model = VAE(ch_mults=[1,2,4,4])
         #print(model)
+        print(model)
         params = sum([p.numel() for p in model.parameters()])
         print(f'Params (in millions): {params/1e6}')
         #model = model.half().to(0)
+        raise
         model = model.to(0)
 
         is_unet = isinstance(model, UNet)

@@ -26,15 +26,17 @@ class ResBlock(nn.Module):
         temb_c: number of t (time?) embedding input channels (or None if no time embedding)
         '''
         super().__init__()
-        self.norm1 = nn.GroupNorm(32, in_c, eps=1e-4)
+        self.norm1 = StableNorm(32, in_c)
         self.act1 = nn.SiLU()
         self.conv1 = nn.Conv2d(in_c, nc, 3, padding=1)
-        self.norm2 = nn.GroupNorm(32, nc, eps=1e-4)
+        self.norm2 = StableNorm(32, nc)
         self.act2 = nn.SiLU()
         self.conv2 = zero_module(nn.Conv2d(nc, nc, 3, padding=1))
+        #self.conv2 = nn.Conv2d(nc, nc, 3, padding=1)
         if temb_c is not None:
             self.temb_proj = nn.Linear(temb_c, nc)
         self.skip = nn.Conv2d(in_c, nc, 1, bias=False) if in_c != nc else None
+        #self.skip = nn.Conv2d(in_c, nc, 1) if in_c != nc else None
     
     def forward(self, x, temb=None): # temb = t (time) embedding
         skip = x if self.skip is None else self.skip(x)
@@ -44,6 +46,16 @@ class ResBlock(nn.Module):
         x = self.conv2(self.act2(self.norm2(x)))
 
         return x + skip
+
+class StableNorm(nn.Module): # runs GroupNorm in FP32 because of bfloat16 stability issues when x is large but with small variance (i.e. x = 100) 
+    def __init__(self, num_groups: int, num_channels: int):
+        super().__init__()
+        #self.norm = nn.GroupNorm(num_groups, num_channels).double()
+        self.norm = nn.GroupNorm(num_groups, num_channels) # if running on non-tpu
+    
+    def forward(self, x):
+        #return self.norm(x.double()).float()
+        return self.norm(x)
 
 class Downsample(nn.Module):
     def __init__(self, nc: int):
@@ -66,10 +78,12 @@ class Upsample(nn.Module):
 
     def forward(self, x):
         _B, _C, H, W = x.shape
-        return self.conv(F.interpolate(x, size=(H*2, W*2), mode='nearest')) # specifying scale factor offloads op to CPU: https://github.com/pytorch/xla/issues/2588
+        #return self.conv(F.interpolate(x, size=(H*2, W*2), mode='nearest')) # specifying scale factor offloads op to CPU: https://github.com/pytorch/xla/issues/2588
+        dtype = x.dtype
+        return self.conv(F.interpolate(x.float(), size=(H*2, W*2), mode='nearest')).type(dtype)
 
 class MHA(nn.Module): # slightly faster and less mem than torch multihead attn (I suppose from QKV projection being fused)
-    def __init__(self, nc: int, nh: int, kv_dim: int = None, zero_last_layer: bool = True):
+    def __init__(self, nc: int, nh: int, kv_dim: int = None, zero_last_layer: bool = False):
         '''
         nc: number of input and output channels
         nh: number of heads (note: d_head = nc // nh)
@@ -116,7 +130,7 @@ class Attn2d(nn.Module):
         '''
         super().__init__()
         self.nc = nc
-        self.norm = nn.GroupNorm(32, self.nc, eps=1e-4)
+        self.norm = StableNorm(32, self.nc)
         self.attn = MHA(self.nc, max(self.nc // 128, 1)) # max head dim is 128
 
     def forward(self, x):

@@ -1,4 +1,4 @@
-from modules.layers import ResBlock, Downsample, Upsample, Attn2d, TransformerBlock, TimeEmbedding
+from modules.layers import ResBlock, Downsample, Upsample, Attn2d, TransformerBlock, TimeEmbedding, StableNorm
 from transformers import CLIPTokenizerFast, CLIPTextModel
 from torchvision.models import vgg16, VGG16_Weights
 import torch.nn.functional as F
@@ -41,7 +41,7 @@ class VAEEncoder(nn.Module):
             ResBlock(out_c, out_c),
 
             # out
-            nn.GroupNorm(8, out_c),
+            StableNorm(32, out_c),
             nn.SiLU(),
             nn.Conv2d(out_c, 2*nz, 3, padding=1),
         ]
@@ -81,12 +81,12 @@ class VAEDecoder(nn.Module):
 
         for layer_idx, ch_mult in enumerate(reversed(ch_mults)):
             in_c, out_c = out_c, self.nc * ch_mult
-            layers += [ResBlock(in_c, out_c)] + [ResBlock(out_c, out_c) for _ in range(nlayers_per_res-1)]
-            if layer_idx != 0:
+            layers += [ResBlock(in_c, out_c)] + [ResBlock(out_c, out_c) for _ in range(nlayers_per_res-1)] # nlayers_per_res-1 is actually nlayers_per_res in the original model
+            if layer_idx != 0: # 0 should be replaced with len(ch_mults)-1 but i didn't realize until mid-training
                 layers.append(Upsample(out_c))
 
         layers += [
-            nn.GroupNorm(8, out_c),
+            StableNorm(32, out_c),
             nn.SiLU(),
             nn.Conv2d(out_c, 3, 3, padding=1)
         ]
@@ -150,7 +150,7 @@ class Discriminator(nn.Module):
             nf_mult = min(2 ** n, 8)
             sequence += [
                 nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
-                nn.GroupNorm(8, ndf * nf_mult),
+                StableNorm(8, ndf * nf_mult),
                 nn.LeakySiLU(0.2)
             ]
 
@@ -158,7 +158,7 @@ class Discriminator(nn.Module):
         nf_mult = min(2 ** n_layers, 8)
         sequence += [
             nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
-            nn.GroupNorm(8, ndf * nf_mult),
+            StableNorm(8, ndf * nf_mult),
             nn.LeakySiLU(0.2)
         ]
 
@@ -269,7 +269,7 @@ class UNet(nn.Module):
                 self.ups.append(block)
 
         self.out = nn.Sequential(
-            nn.GroupNorm(8, nc),
+            StableNorm(32, nc),
             nn.SiLU(),
             nn.Conv2d(nc, self.in_c, 3, padding=1)
         )
